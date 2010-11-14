@@ -26,3 +26,7 @@ MIDORATOR_VERSION ?= 0.020101110
 archive:
 	git archive --prefix=midorator-$(MIDORATOR_VERSION)/ HEAD | gzip > ../midorator-$(MIDORATOR_VERSION).tgz
 .PHONY: archive
+
+install: all
+	install midorator.so $(DESTDIR)/usr/lib/midori/midorator.so
+.PHONY: install
