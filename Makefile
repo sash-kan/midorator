@@ -36,5 +36,5 @@ install: all
 .PHONY: install
 
 clean:
-	rm *.o *.so
+	-rm *.o *.so
 .PHONY: clean
