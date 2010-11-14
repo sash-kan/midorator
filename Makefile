@@ -22,3 +22,7 @@ default.h: default.config
 debug:
 	$(MAKE) CFLAGS='-ggdb3 -DDEBUG -O0 -rdynamic' midorator.so
 
+MIDORATOR_VERSION ?= 0.020101110
+archive:
+	git archive --prefix=midorator-$(MIDORATOR_VERSION)/ HEAD | gzip > midorator-$(MIDORATOR_VERSION).tgz
+.PHONY: archive
