@@ -23,10 +23,17 @@ debug:
 	$(MAKE) CFLAGS='-ggdb3 -DDEBUG -O0 -rdynamic' midorator.so
 
 MIDORATOR_VERSION ?= 0.020101110
+GIT_REV = HEAD
 archive:
-	git archive --prefix=midorator-$(MIDORATOR_VERSION)/ HEAD | gzip > ../midorator-$(MIDORATOR_VERSION).tgz
+	git archive --prefix=midorator-$(MIDORATOR_VERSION)/ $(GIT_REV) | gzip > ../midorator-$(MIDORATOR_VERSION).tgz
 .PHONY: archive
 
+DESTDIR =
+MIDORI_LIBDIR = /usr/lib/midori/
 install: all
-	install midorator.so $(DESTDIR)/usr/lib/midori/midorator.so
+	install midorator.so $(DESTDIR)$(MIDORI_LIBDIR)
 .PHONY: install
+
+clean:
+	rm *.o *.so
+.PHONY: clean
