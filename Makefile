@@ -24,5 +24,5 @@ debug:
 
 MIDORATOR_VERSION ?= 0.020101110
 archive:
-	git archive --prefix=midorator-$(MIDORATOR_VERSION)/ HEAD | gzip > midorator-$(MIDORATOR_VERSION).tgz
+	git archive --prefix=midorator-$(MIDORATOR_VERSION)/ HEAD | gzip > ../midorator-$(MIDORATOR_VERSION).tgz
 .PHONY: archive
