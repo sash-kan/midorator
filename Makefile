@@ -31,6 +31,7 @@ archive:
 DESTDIR =
 MIDORI_LIBDIR = /usr/lib/midori/
 install: all
+	mkdir -p $(DESTDIR)$(MIDORI_LIBDIR)
 	install midorator.so $(DESTDIR)$(MIDORI_LIBDIR)
 .PHONY: install
 
