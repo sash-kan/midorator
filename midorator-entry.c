@@ -133,7 +133,7 @@ static GList* midorator_entry_get_comp_list(MidoratorEntry* e, const char* str) 
 		if (katze_array_is_a(c, G_TYPE_STRING))
 			s = katze_array_get_nth_item(c, i);
 		else
-			s = ((KatzeItem*)katze_array_get_nth_item(c, i))->token;
+			s = katze_item_get_token(katze_array_get_nth_item(c, i));
 		if (strncmp(s, str, sl) == 0) {
 			list = g_list_append(list, (gpointer)s);
 			count++;
@@ -345,6 +345,7 @@ static void midorator_entry_history_up(MidoratorEntry* e) {
 	const char *full = gtk_entry_get_text(GTK_ENTRY(e));
 	guint pos = gtk_editable_get_position(GTK_EDITABLE(e));
 	char *prefix = g_strndup(full, g_utf8_offset_to_pointer(full, pos) - full);
+	bool pre = strlen(prefix) == strlen(full);
 	KatzeArray *c = e->command_history;
 	if (!c)
 		return;
@@ -354,9 +355,9 @@ static void midorator_entry_history_up(MidoratorEntry* e) {
 	char *found = NULL;
 	for (i = 0; i < l; i++) {
 		char *item = katze_array_get_nth_item(c, i);
-		if (strcmp(item, full) == 0)
+		if (!pre && strcmp(item, full) == 0)
 			break;
-		else if (g_str_has_prefix(item, prefix))
+		else if (g_str_has_prefix(item, prefix) && strlen(item) != strlen(prefix))
 			found = item;
 	}
 	if (found) {
@@ -369,6 +370,7 @@ static void midorator_entry_history_down(MidoratorEntry* e) {
 	const char *full = gtk_entry_get_text(GTK_ENTRY(e));
 	guint pos = gtk_editable_get_position(GTK_EDITABLE(e));
 	char *prefix = g_strndup(full, g_utf8_offset_to_pointer(full, pos) - full);
+	bool pre = strlen(prefix) == strlen(full);
 	KatzeArray *c = e->command_history;
 	if (!c)
 		return;
@@ -378,9 +380,9 @@ static void midorator_entry_history_down(MidoratorEntry* e) {
 	char *found = NULL;
 	for (i = l - 1; i >= 0; i--) {
 		char *item = katze_array_get_nth_item(c, i);
-		if (strcmp(item, full) == 0)
+		if (!pre && strcmp(item, full) == 0)
 			break;
-		else if (g_str_has_prefix(item, prefix))
+		else if (g_str_has_prefix(item, prefix) && strlen(item) != strlen(prefix))
 			found = item;
 	}
 	if (found) {

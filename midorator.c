@@ -18,6 +18,7 @@
 #include "midorator-entry.h"
 #include "midorator-history.h"
 #include "midorator-commands.h"
+#include "midorator-message.h"
 
 
 
@@ -39,32 +40,6 @@ static_f char* midorator_html_decode(char *str);
 #undef g_signal_handlers_disconnect_by_func
 #define g_signal_handlers_disconnect_by_func(i, f, d) (g_signal_handlers_disconnect_matched((i), G_SIGNAL_MATCH_FUNC, 0, 0, NULL, (f), NULL))
 
-// recursively search for widget
-#define midorator_findwidget_macro(parent, iter, test) \
-{	\
-logextra("%s; %s", #parent, #test); \
-	GList *__l; \
-	GList *__i; \
-	__l = gtk_container_get_children(GTK_CONTAINER((parent))); \
-	iter = NULL; \
-	for (__i = __l; __i; __i = __i->next) { \
-		iter = GTK_WIDGET(__i->data); \
-logextra("%p: %s", iter, gtk_widget_get_name(iter)); \
-		if (test) \
-			break; \
-		if (GTK_IS_CONTAINER(__i->data)) { \
-			GtkContainer *c = GTK_CONTAINER(__i->data); \
-			GList *l2 = gtk_container_get_children(c); \
-			__l = g_list_concat(__l, l2); \
-		} \
-	} \
-	g_list_free(__l); \
-	if (!__i) \
-		iter = NULL; \
-}
-
-#define midorator_findwidget_up_macro(child, iter, test) \
-	for ((iter) = GTK_WIDGET((child)); (iter) && !(test); (iter) = gtk_widget_get_parent(GTK_WIDGET((iter))));
 
 // replacement of original function, made to work with midori-0.2.4 that doesn't have it
 GtkWidget *midori_view_get_web_view(MidoriView *view) {
@@ -81,12 +56,12 @@ GtkWidget *midori_view_from_web_view(GtkWidget *web_view) {
 }
 
 static_f gboolean midorator_string_to_bool(const char *string) {
-	return
-		g_ascii_strcasecmp(string, "true") ||
-		g_ascii_strcasecmp(string, "yes") ||
-		g_ascii_strcasecmp(string, "on") ||
-		g_ascii_strcasecmp(string, "+") ||
-		g_ascii_strcasecmp(string, "1");
+	return string && (
+		g_ascii_strcasecmp(string, "true") == 0 ||
+		g_ascii_strcasecmp(string, "yes") == 0 ||
+		g_ascii_strcasecmp(string, "on") == 0 ||
+		g_ascii_strcasecmp(string, "+") == 0 ||
+		g_ascii_strcasecmp(string, "1") == 0);
 }
 
 void midorator_error(GtkWidget *web_view, char *fmt, ...) {
@@ -838,13 +813,13 @@ static_f void midorator_js_open(JSContextRef ctx, const char *href, JSObjectRef 
 	JSStringRelease(uri);
 }
 
-static_f void midorator_js_click(JSContextRef ctx, JSObjectRef item) {
+static_f void midorator_js_click(JSContextRef ctx, JSObjectRef item, bool manual) {
 	if (JSValueToObject(ctx, midorator_js_getprop(ctx, item, "form"), NULL)) {
 		midorator_js_form_click(ctx, item, false);
 		return;
 	}
 	midorator_js_callprop_proto(ctx, item, "focus", 0, NULL);
-	if (midorator_js_is_js_enabled(ctx))
+	if (midorator_js_is_js_enabled(ctx) && !manual)
 		midorator_js_handle(ctx, item, "onclick", NULL);
 	else {
 		char *href = midorator_js_value_to_string(ctx, midorator_js_getprop(ctx, item, "href"));
@@ -907,7 +882,7 @@ static_f JSValueRef midorator_js_callback(JSContextRef ctx, JSObjectRef function
 		JSObjectRef obj = JSValueToObject(ctx, arguments[1], NULL);
 		if (!obj)
 			return JSValueMakeNull(ctx);
-		midorator_js_click(ctx, obj);
+		midorator_js_click(ctx, obj, false);
 		return JSValueMakeNull(ctx);
 	} else if (JSStringIsEqualToUTF8CString(param, "tabnew") || JSStringIsEqualToUTF8CString(param, "bgtab") || JSStringIsEqualToUTF8CString(param, "multitab")) {
 		bool bg = ! JSStringIsEqualToUTF8CString(param, "tabnew");
@@ -930,7 +905,7 @@ static_f JSValueRef midorator_js_callback(JSContextRef ctx, JSObjectRef function
 			free(tagname);
 		}
 		if (multi)
-			midorator_process_command(web_view, "entry ';m'");
+			midorator_process_command(web_view, "entry ;m");
 		return JSValueMakeNull(ctx);
 	} else if (JSStringIsEqualToUTF8CString(param, "yank")) {
 		JSStringRelease(param);
@@ -978,35 +953,18 @@ static_f JSValueRef midorator_js_callback(JSContextRef ctx, JSObjectRef function
 }
 
 static_f JSValueRef midorator_js_private_callback(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject, size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception) {
-	if (argumentCount < 1)
+	if (argumentCount < 1 || argumentCount > 1024)
 		return JSValueMakeNull(ctx);
-	char *cmd = NULL;
-	char *request[argumentCount - 1];
-	bool get = false;
+	char *cmd[argumentCount + 1];
 	int i;
-	for (i=0; i < argumentCount; i++) {
-		char *cmdel = midorator_js_value_to_string(ctx, arguments[i]);
-		if (i == 0 && strcmp(cmdel, "get") == 0) {
-			free(cmdel);
-			get = true;
-		} else if (get) {
-			request[i-1] = cmdel;
-		} else {
-			char *cmdsh = g_shell_quote(cmdel);
-			free(cmdel);
-			if (cmd) {
-				char *cmd2 = g_strconcat(cmd, " ", cmdsh, NULL);
-				g_free(cmdsh);
-				g_free(cmd);
-				cmd = cmd2;
-			} else
-				cmd = cmdsh;
-		}
-	}
-	if (get) {
-		char *ret = midorator_process_request(midorator_js_get_wv(ctx), request, argumentCount - 1);
-		for (i=0; i < argumentCount - 1; i++)
-			free(request[i]);
+	for (i=0; i < argumentCount; i++)
+		cmd[i] = midorator_js_value_to_string(ctx, arguments[i]);
+	cmd[argumentCount] = NULL;
+
+	if (cmd[0] && strcmp(cmd[0], "get") == 0) {
+		char *ret = midorator_process_request(midorator_js_get_wv(ctx), cmd + 1, argumentCount - 1);
+		for (i=0; i < argumentCount; i++)
+			free(cmd[i]);
 		if (ret) {
 			JSStringRef s = JSStringCreateWithUTF8CString(ret);
 			g_free(ret);
@@ -1016,8 +974,9 @@ static_f JSValueRef midorator_js_private_callback(JSContextRef ctx, JSObjectRef 
 		} else
 			return JSValueMakeNull(ctx);
 	} else {
-		bool ret = midorator_process_command(midorator_js_get_wv(ctx), "%s", cmd);
-		g_free(cmd);
+		bool ret = midorator_process_command_v(midorator_js_get_wv(ctx), cmd, argumentCount);
+		for (i=0; i < argumentCount; i++)
+			free(cmd[i]);
 		return JSValueMakeBoolean(ctx, ret);
 	}
 }
@@ -1100,7 +1059,7 @@ static_f void midorator_js_go(JSContextRef ctx, const char *direction) {
 			continue;
 		if (g_ascii_strcasecmp(rel, direction) == 0) {
 			free(rel);
-			midorator_js_click(ctx, midorator_js_v2o(ctx, iter.val));
+			midorator_js_click(ctx, midorator_js_v2o(ctx, iter.val), true);
 			return;
 		}
 		free(rel);
@@ -1147,7 +1106,7 @@ static_f void midorator_js_go(JSContextRef ctx, const char *direction) {
 				g_free(text);
 				g_regex_unref(re);
 				g_regex_unref(tagre);
-				midorator_js_click(ctx, midorator_js_v2o(ctx, iter.val));
+				midorator_js_click(ctx, midorator_js_v2o(ctx, iter.val), false);
 				return;
 			}
 			g_free(text);
@@ -1333,68 +1292,6 @@ static_f GtkStatusbar* midorator_find_sb(GtkWidget *w) {
 	return GTK_STATUSBAR(w);
 }
 
-void midorator_message(GtkWidget* web_view, const char *message, const char *bg, const char *fg) {
-	GtkWidget *w;
-	for (w = web_view; w && !GTK_IS_VBOX(w); w = gtk_widget_get_parent(w));
-	if (!w)
-		return;
-
-	GList *l = gtk_container_get_children(GTK_CONTAINER(w));
-	GList *li;
-	for (li = l; li; li = li->next)
-		if (GTK_IS_SCROLLED_WINDOW(li->data) && strcmp(gtk_widget_get_name(GTK_WIDGET(li->data)), "midorator_message_area") == 0)
-			break;
-
-	GtkScrolledWindow *sw;
-	GtkLabel *lab;
-	if (li) {
-		sw = GTK_SCROLLED_WINDOW(li->data);
-		li = gtk_container_get_children(GTK_CONTAINER(sw));
-		GtkContainer *vp = GTK_CONTAINER(li->data);
-		g_list_free(li);
-		li = gtk_container_get_children(vp);
-		lab = GTK_LABEL(li->data);
-		g_list_free(li);
-	} else {
-		sw = GTK_SCROLLED_WINDOW(gtk_scrolled_window_new(NULL, NULL));
-		gtk_widget_set_name(GTK_WIDGET(sw), "midorator_message_area");
-		gtk_widget_show(GTK_WIDGET(sw));
-		gtk_box_pack_start(GTK_BOX(w), GTK_WIDGET(sw), true, true, 0);
-
-		lab = GTK_LABEL(gtk_label_new(NULL));
-		gtk_scrolled_window_add_with_viewport(sw, GTK_WIDGET(lab));
-		gtk_widget_show(GTK_WIDGET(lab));
-		gtk_label_set_markup(lab, "");
-		gtk_label_set_selectable(lab, true);
-		gtk_misc_set_alignment(GTK_MISC(lab), 0, 0);
-	}
-	g_list_free(l);
-
-	if (message) {
-		char *text;
-		if (bg) {
-			if (fg)
-				text = g_markup_printf_escaped("<span color=\"%s\" bgcolor=\"%s\">  %s  \n</span>", fg, bg, message);
-			else
-				text = g_markup_printf_escaped("<span bgcolor=\"%s\">  %s  \n</span>", bg, message);
-		} else {
-			if (fg)
-				text = g_markup_printf_escaped("<span color=\"%s\">  %s  \n</span>", fg, message);
-			else
-				text = g_markup_printf_escaped("  %s  \n", message);
-		}
-
-		const char *oldtext = gtk_label_get_label(lab);
-		char *fulltext = g_strconcat(oldtext, text, NULL);
-		g_free(text);
-		gtk_label_set_markup(lab, fulltext);
-		g_free(fulltext);
-		gtk_widget_show(GTK_WIDGET(sw));
-	} else {
-		gtk_widget_hide(GTK_WIDGET(sw));
-		gtk_label_set_markup(lab, "");
-	}
-}
 
 void midorator_search(GtkWidget* web_view, const char *match, gboolean forward, gboolean remember) {
 	static char *lastmatch = NULL;
@@ -1494,6 +1391,14 @@ static_f void midorator_current_view(GtkWidget **web_view) {
 			*web_view = GTK_WIDGET(li->data);
 	}
 	g_list_free(l);
+}
+
+static_f gboolean midorator_is_current_view(GtkWidget *w) {
+	midorator_findwidget_up_macro(w, w, w && GTK_IS_NOTEBOOK(gtk_widget_get_parent(w)));
+	if (!w)
+		return false;
+	GtkNotebook *n = GTK_NOTEBOOK(gtk_widget_get_parent(w));
+	return gtk_notebook_page_num(n, w) == gtk_notebook_get_current_page(n);
 }
 
 GtkWidget *midorator_entry(GtkWidget* web_view, const char *text) {
@@ -1698,20 +1603,26 @@ static_f gboolean midorator_key_press_event_cb (GtkWidget* web_view, GdkEventKey
 			numprefix = 0;
 			g_free(sequence);
 			sequence = NULL;
-			return true;
+			return !midorator_string_to_bool(midorator_options("option", "pass_unhandled", NULL));
 		} else if (strcmp(meaning, "wait") == 0) {
 			return true;
+		} else if (strcmp(meaning, "pass") == 0) {
+			numprefix = 0;
+			g_free(sequence);
+			sequence = NULL;
+			return false;
 		} else {
 			int pr = numprefix;
 			numprefix = 0;
 			g_free(sequence);
 			sequence = NULL;
 			if (pr && meaningN && meaningN[0])
-				return midorator_process_command(web_view, meaningN, pr);
+				midorator_process_command(web_view, meaningN, pr);
 			else if (pr)
-				return midorator_process_command(web_view, "%i%s", pr, meaning);
+				midorator_process_command(web_view, "%i%s", pr, meaning);
 			else
-				return midorator_process_command(web_view, "%s", meaning);
+				midorator_process_command(web_view, "%s", meaning);
+			return true;
 		}
 	}
 }
@@ -1721,13 +1632,13 @@ static_f void midorator_context_ready_cb (WebKitWebView* web_view, WebKitWebFram
 	// TODO: normal hooks
 }
 
+static_f void midorator_notify_uri_cb (WebKitWebView* web_view) {
+	if (midorator_is_current_view(GTK_WIDGET(web_view)))
+		midorator_process_command(web_view, NULL, "js_fix_mode");
+}
+
 static_f gboolean midorator_navrequest_cb (WebKitWebView *web_view, WebKitWebFrame *frame, WebKitNetworkRequest *request, WebKitWebNavigationAction *navigation_action, WebKitWebPolicyDecision *policy_decision, MidoriExtension* extension) {
 //	midorator_entry(GTK_WIDGET(web_view), NULL);
-
-	// TODO: get rid of this hack
-	GdkEventKey e = {};
-	e.keyval = GDK_Escape;
-	midorator_key_press_event_cb(GTK_WIDGET(web_view), &e, NULL);
 
 	return false;
 }
@@ -1797,6 +1708,8 @@ static_f void midorator_add_tab_cb (MidoriBrowser* browser, MidoriView* view, Mi
 		G_CALLBACK (midorator_navrequest_cb), extension);
 	g_signal_connect (web_view, "paste-clipboard",
 		G_CALLBACK (midorator_paste_clipboard_cb), browser);
+	g_signal_connect (web_view, "notify::uri",
+		G_CALLBACK (midorator_notify_uri_cb), NULL);
 	
 	GtkWidget *w = midorator_findwidget(GTK_WIDGET(browser), "MidoriLocationEntry");
 	GtkEditable *entry;
