@@ -1,3 +1,9 @@
+midorator (0.020101206-1) unstable; urgency=low
+
+  * update to current upstream version
+
+ -- alexander barakin (aka sash-kan) <alex.barakin@gmail.com>  Thu, 09 Dec 2010 01:05:48 +0300
+
 midorator (0.020101110-1) unstable; urgency=low
 
   * Initial release.
