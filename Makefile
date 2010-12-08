@@ -25,7 +25,7 @@ default.h: default.config
 debug:
 	$(MAKE) CFLAGS='-ggdb3 -DDEBUG -O0 -rdynamic' midorator.so
 
-MIDORATOR_VERSION ?= 0.020101110
+MIDORATOR_VERSION := $(shell sed -n '/VERSION/{s/.* \"//;s/\".*//;p}' midorator.h)
 GIT_REV = HEAD
 archive:
 	git archive --prefix=midorator-$(MIDORATOR_VERSION)/ $(GIT_REV) | gzip > ../midorator_$(MIDORATOR_VERSION).orig.tar.gz
@@ -41,3 +41,4 @@ install: all
 clean:
 	-rm *.o *.so
 .PHONY: clean
+
